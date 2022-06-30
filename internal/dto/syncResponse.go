@@ -9,3 +9,8 @@ type ResponseDate struct {
 	Date   string
 	Status string
 }
+
+type ResponseByCreateDate struct {
+	CreateDate string
+	Status     string
+}

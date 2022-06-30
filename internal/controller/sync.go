@@ -2,9 +2,11 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -39,7 +41,7 @@ func init() {
 func Sync(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	awb := vars["awb"]
-	log.Println(awb)
+	fmt.Println((time.Now()).String() + " : Start Sync, Got AWB : " + awb)
 
 	ds := fetchFromSource(awb)
 	isSuccess := insertToTarget(ds)
@@ -52,29 +54,10 @@ func Sync(w http.ResponseWriter, r *http.Request) {
 	if isSuccess {
 		resp.Status = "Success"
 	}
+	fmt.Println((time.Now()).String() + " : End Sync")
 	jsonResponse, _ := json.Marshal(resp)
 	w.Write(jsonResponse)
 
-}
-
-func SyncCnoteDate(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	date := vars["date"]
-	log.Println(date)
-
-	ds := fetchFromCnoteDate(date)
-	isSuccess := insertToCouchbase(ds)
-
-	resp := dto.ResponseDate{
-		Date:   date,
-		Status: "Failed",
-	}
-
-	if isSuccess {
-		resp.Status = "Success"
-	}
-	jsonResponse, _ := json.Marshal(resp)
-	w.Write(jsonResponse)
 }
 
 func SyncCmsReturn(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +78,85 @@ func SyncCmsReturn(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonResponse, _ := json.Marshal(resp)
 	w.Write(jsonResponse)
+}
+
+func SyncDwhCms(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	awb := vars["awb"]
+	log.Println(awb)
+
+	ds := fetchFromDwhCmsReturn(awb)
+	isSuccess := insertDwhCmsReturn(ds)
+
+	resp := dto.Response{
+		Awb:    awb,
+		Status: "Failed",
+	}
+
+	if isSuccess {
+		resp.Status = "Success"
+	}
+	jsonResponse, _ := json.Marshal(resp)
+	w.Write(jsonResponse)
+}
+
+func SyncByCnoteDate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	date := vars["date"]
+	fmt.Println((time.Now()).String() + " : Start SyncCnoteByDate, Got Date : " + date)
+
+	ds := fetchFromSourceByCnoteDate(date)
+	isSuccess := insertToTarget(ds)
+
+	resp := dto.ResponseByCreateDate{
+		CreateDate: date,
+		Status:     "Failed",
+	}
+
+	if isSuccess {
+		resp.Status = "Success"
+	}
+	fmt.Println((time.Now()).String() + " : End SyncCnoteByDate")
+	jsonResponse, _ := json.Marshal(resp)
+	w.Write(jsonResponse)
+
+}
+
+func fetchFromSourceByCnoteDate(tgl string) []datastruct.T_dwh {
+	log.Println("Fetch from Oracle")
+	//OPEN DB
+	c := oracleDB.OpenConn()
+	defer oracleDB.CloseConn(c)
+
+	//select data from Oracle
+	var res []datastruct.T_dwh
+	query := "SELECT * FROM T_DWH  where trunc(cnote_date) = TO_DATE(:tgl,'DDMMYYYY')"
+	err := c.Select(&res, query, tgl)
+
+	if err != nil {
+		log.Fatalf("error %v", err)
+	}
+	fmt.Println((time.Now()).String() + " Fetched From Oracle, Got Total data : " + strconv.Itoa(len(res)))
+	return res
+}
+
+// function get data DWH & CMS Return from oracle db 101
+func fetchFromDwhCmsReturn(awb string) []datastruct.T_dwh {
+	log.Println("Fetch from Oracle")
+	//OPEN DB
+	c := oracleDB.OpenConn()
+	defer oracleDB.CloseConn(c)
+
+	//select data from Oracle
+	var res []datastruct.T_dwh
+	query := "select x.cnote_no,       to_char(x.cnote_date,'RRRR-MM-DD HH24:MI') cnote_date,       x.cnote_branch_id,       x.branch_region,       x.cnote_origin,       x.origin_name,       x.origin_zone,       x.cnote_cust_no,       x.cust_name,       x.marketplace_name,       x.cnote_shipper_name,       x.cnote_receiver_name,       x.cnote_destination_id,       x.branch_dest_region,       x.branch_destination,       x.cnote_destination,       x.destination_name,       x.destination_code,       x.destination_zone,       x.cnote_services_code,       x.route_etd_from,       x.route_etd_thru,       x.cnote_shipment_type,       x.cnote_goods_descr,       x.cnote_cod,       x.cod_no,       x.cnote_cashless,       x.jlc_no,       x.hybrid_branch,       x.hybrid_cust_no,       x.cnote_user,       x.cnote_user_zone,       x.pickup_no,       to_char(x.pickup_date,'RRRR-MM-DD HH24:MI') pickup_date,       x.pickup_courier_id,       x.pickup_courier_zone,       x.pickup_merchan_id,       x.pickup_latitude,       x.pickup_longitude,       x.receiving_agent_no,       to_char(x.receiving_agent_crdate,'RRRR-MM-DD HH24:MI') receiving_agent_crdate,       x.receiving_agent_branch,       x.receiving_agent_courier_id,       x.receiving_agent_user_id,       x.receiving_agent_user_zone,       x.receiving_out_no,       to_char(x.receiving_out_crdate,'RRRR-MM-DD HH24:MI') receiving_out_crdate,       x.receiving_out_branch,       x.receiving_out_courier_id,       x.receiving_out_user_id,       x.receiving_out_user_zone,       x.manifest_outb_no,       to_char(x.manifest_outb_crdate,'RRRR-MM-DD HH24:MI') manifest_outb_crdate,       x.manifest_outb_origin,       x.manifest_outb_user_id,       x.manifest_outb_user_zone,       x.manifest_outb_bag_no,       x.smu_no,       x.smu_schd_no,       to_char(x.smu_sch_date,'RRRR-MM-DD'),       to_char(x.smu_etd,'HH24:MI'),       to_char(x.smu_eta,'HH24:MI'),       x.smu_remarks,       x.manifest_trs1_no,       to_char(x.manifest_trs1_crdate,'RRRR-MM-DD HH24:MI') manifest_trs1_crdate,       x.manifest_trs1_origin,       x.manifest_trs1_user_id,       x.manifest_trs1_user_zone,       x.manifest_trsl_no,       to_char(x.manifest_trsl_crdate,'RRRR-MM-DD HH24:MI') manifest_trsl_crdate,       x.manifest_trsl_origin,       x.manifest_trsl_user_id,       x.manifest_trsl_user_zone,       x.manifest_inb_no,       to_char(x.manifest_inb_crdate,'RRRR-MM-DD HH24:MI') manifest_inb_crdate,       x.manifest_inb_bag_no,       x.manifest_inb_user_id,       x.manifest_inb_user_zone,       x.pra_mrsheet_no,       to_char(x.pra_creation_date,'RRRR-MM-DD HH24:MI') pra_creation_date,       x.pra_mrsheet_branch,       x.pra_mrsheet_courier_id,       x.pra_courier_zone_code,       x.pra_mrsheet_uid,       x.pra_user_zone_code,       x.mhocnote_no,       to_char(x.dhocnote_tdate,'RRRR-MM-DD HH24:MI') dhocnote_tdate,       x.mhocnote_branch_id,       x.mhocnote_zone,       x.mhocnote_zone_dest,       x.mhocnote_user_id,       x.mhocnote_user_zone_code,       x.mhicnote_no,       to_char(x.dhicnote_tdate,'RRRR-MM-DD HH24:MI') dhicnote_tdate,       x.mhicnote_branch_id,       x.mhicnote_zone,       x.mhicnote_user_id,       x.mhicnote_user_zone_code,       x.mrsheet1_no,       to_char(x.mrsheet1_creation_date,'RRRR-MM-DD HH24:MI') mrsheet1_creation_date,       x.mrsheet1_branch,       x.mrsheet1_courier_id,       x.mrsheet1_uid,       x.mrsheet1_user_zone_code,       x.mrsheetl_no,       to_char(x.mrsheetl_creation_date,'RRRR-MM-DD HH24:MI') mrsheetl_creation_date,       x.mrsheetl_branch,       x.mrsheetl_courier_id,       x.mrsheetl_uid,       x.mrsheetl_user_zone_code,       x.pod1_drsheet_no,       x.pod1_mrsheet_branch,       x.pod1_mrsheet_courier_id,       x.pod1_courier_zone_code,       x.pod1_drsheet_date,       x.pod1_drsheet_receiver,       x.pod1_drsheet_status,       x.pod1_latitude,       x.pod1_longitude,       x.pod1_epod_url,       x.pod1_epod_url_pic,       x.pod1_drsheet_uid,       x.pod1_user_zone_code,       x.pod1_drsheet_udate,       x.podl_drsheet_no,       x.podl_mrsheet_branch,       x.podl_mrsheet_courier_id,       x.podl_courier_zone_code,       x.podl_drsheet_date,       x.podl_drsheet_receiver,       x.podl_drsheet_status,       x.podl_latitude,       x.podl_longitude,       x.podl_epod_url,       x.podl_epod_url_pic,       x.podl_drsheet_uid,       x.podl_user_zone_code,       x.podl_drsheet_udate,       x.reqcnote_cnote_no_rt cnote_no_r,       z.manifest_outb_no manifest_outb_no_r,       z.manifest_outb_crdate manifest_outb_crdate_r,       z.manifest_outb_origin manifest_outb_origin_r,       z.manifest_outb_user_id manifest_outb_user_id_r,       z.manifest_outb_user_zone manifest_outb_user_zone_r,       z.manifest_outb_bag_no manifest_outb_bag_no_r,       z.smu_no smu_no_r,       z.smu_schd_no smu_schd_no_r,       to_char(z.smu_sch_date,'RRRR-MM-DD') smu_sch_date_r,       to_char(z.smu_etd,'HH24:MI') tsmu_etd_r,       to_char(z.smu_eta,'HH24:MI') smu_eta_r,       z.smu_remarks smu_remarks_r,       z.manifest_trs1_no manifest_trs1_no_r,       z.manifest_trs1_crdate manifest_trs1_crdate_r,       z.manifest_trs1_origin manifest_trs1_origin_r,       z.manifest_trs1_user_id manifest_trs1_user_id_r,       z.manifest_trs1_user_zone manifest_trs1_user_zone_r,       z.manifest_trsl_no manifest_trsl_no_r,       z.manifest_trsl_crdate manifest_trsl_crdate_r,       z.manifest_trsl_origin manifest_trsl_origin_r,       z.manifest_trsl_user_id manifest_trsl_user_id_r,       z.manifest_trsl_user_zone manifest_trsl_user_zone_r,       z.manifest_inb_no manifest_inb_no_r,       z.manifest_inb_crdate manifest_inb_crdate_r,       z.manifest_inb_bag_no manifest_inb_bag_no_r,       z.manifest_inb_user_id manifest_inb_user_id_r,       z.manifest_inb_user_zone manifest_inb_user_zone_r,       z.pra_mrsheet_no pra_mrsheet_no_r,       z.pra_creation_date pra_creation_date_r,       z.pra_mrsheet_branch pra_mrsheet_branch_r,       z.pra_mrsheet_courier_id pra_mrsheet_courier_id_r,       z.pra_courier_zone_code pra_courier_zone_code_r,       z.pra_mrsheet_uid pra_mrsheet_uid_r,       z.pra_user_zone_code pra_user_zone_code_r,       z.mhocnote_no mhocnote_no_r,       z.dhocnote_tdate dhocnote_tdate_r,       z.mhocnote_branch_id mhocnote_branch_id_r,       z.mhocnote_zone mhocnote_zone_r,       z.mhocnote_zone_dest mhocnote_zone_dest_r,       z.mhocnote_user_id mhocnote_user_id_r,       z.mhocnote_user_zone_code mhocnote_user_zone_code_r,       z.mhicnote_no mhicnote_no_r,       z.dhicnote_tdate dhicnote_tdate_r,       z.mhicnote_branch_id mhicnote_branch_id_r,       z.mhicnote_zone mhicnote_zone_r,       z.mhicnote_user_id mhicnote_user_id_r,       z.mhicnote_user_zone_code mhicnote_user_zone_code_r,       z.mrsheet1_no mrsheet1_no_r,       z.mrsheet1_creation_date mrsheet1_creation_date_r,       z.mrsheet1_branch mrsheet1_branch_r,       z.mrsheet1_courier_id mrsheet1_courier_id_r,       z.mrsheet1_uid mrsheet1_uid_r,       z.mrsheet1_user_zone_code mrsheet1_user_zone_code_r,       z.mrsheetl_no mrsheetl_no_r,       z.mrsheetl_creation_date mrsheetl_creation_date_r,       z.mrsheetl_branch mrsheetl_branch_r,       z.mrsheetl_courier_id mrsheetl_courier_id_r,       z.mrsheetl_uid mrsheetl_uid_r,       z.mrsheetl_user_zone_code mrsheetl_user_zone_code_r,       z.pod1_drsheet_no pod1_drsheet_no_r,       z.pod1_mrsheet_branch pod1_mrsheet_branch_r,       z.pod1_mrsheet_courier_id pod1_mrsheet_courier_id_r,       z.pod1_courier_zone_code pod1_courier_zone_code_r,       z.pod1_drsheet_date pod1_drsheet_date_r,       z.pod1_drsheet_receiver pod1_drsheet_receiver_r,       z.pod1_drsheet_status pod1_drsheet_status_r,       z.pod1_latitude pod1_latitude_r,       z.pod1_longitude pod1_longitude_r,       z.pod1_epod_url pod1_epod_url_r,       z.pod1_epod_url_pic pod1_epod_url_pic_r,       z.pod1_drsheet_uid pod1_drsheet_uid_r,       z.pod1_user_zone_code pod1_user_zone_code_r,       z.pod1_drsheet_udate pod1_drsheet_udate_r,       z.podl_drsheet_no podl_drsheet_no_r,       z.podl_mrsheet_branch podl_mrsheet_branch_r,       z.podl_mrsheet_courier_id podl_mrsheet_courier_id_r,       z.podl_courier_zone_code podl_courier_zone_code_r,       z.podl_drsheet_date podl_drsheet_date_r,       z.podl_drsheet_receiver podl_drsheet_receiver_r,       z.podl_drsheet_status podl_drsheet_status_r,       z.podl_latitude podl_latitude_r,       z.podl_longitude podl_longitude_r,       z.podl_epod_url podl_epod_url_r,       z.podl_epod_url_pic podl_epod_url_pic_r,       z.podl_drsheet_uid podl_drsheet_uid_r,       z.podl_user_zone_code podl_user_zone_code_r,       z.podl_drsheet_udate podl_drsheet_udate_r  from (select a.*, b.reqcnote_cnote_no_rt           from jnedwh.t_dwh a, cms_return_reqcnote b         where cnote_no = :awb           and a.cnote_no = b.reqcnote_cnote_no(+)) x,       jnedwh.t_dwh z where x.reqcnote_cnote_no_rt = z.cnote_no(+)"
+	err := c.Select(&res, query, awb)
+
+	if err != nil {
+		log.Fatalf("error %v", err)
+	}
+	fmt.Println((time.Now()).String() + " Fetched From Oracle, Got Total data : " + strconv.Itoa(len(res)))
+	return res
 }
 
 // function get data from oracle db 101
@@ -159,28 +221,46 @@ func fetchFromSource(awb string) []datastruct.T_dwh {
 
 	//select data from Oracle
 	var res []datastruct.T_dwh
-	query := "SELECT * FROM jnedwh.T_DWH where cnote_no = '" + awb + "'"
-	queryResult, err := c.Query(query)
+	query := "SELECT * FROM T_DWH where cnote_no = :awb"
+	err := c.Select(&res, query, awb)
+
+	log.Printf("Cnote No :" + awb)
 
 	if err != nil {
 		log.Fatalf("error %v", err)
 	}
 
-	for queryResult.Next() {
-		var row datastruct.T_dwh
-
-		queryResult.Scan(&row.CREATE_DATE, &row.CNOTE_NO, &row.CNOTE_DATE, &row.CNOTE_CRDATE, &row.CNOTE_BRANCH_ID, &row.BRANCH_REGION, &row.CNOTE_ORIGIN, &row.ORIGIN_NAME, &row.ORIGIN_ZONE, &row.CNOTE_CUST_NO, &row.CNOTE_CUST_TYPE, &row.CUST_NAME, &row.CUST_ADDR1, &row.CUST_ADDR2, &row.CUST_ADDR3, &row.CUST_PHONE, &row.CUST_ZIP, &row.CUST_NA, &row.MARKETPLACE_TYPE, &row.MARKETPLACE_NAME, &row.CNOTE_SHIPPER_NAME, &row.CNOTE_SHIPPER_CONTACT, &row.CNOTE_SHIPPER_ADDR1, &row.CNOTE_SHIPPER_ADDR2, &row.CNOTE_SHIPPER_ADDR3, &row.CNOTE_SHIPPER_PHONE, &row.CNOTE_SHIPPER_ZIP, &row.CNOTE_RECEIVER_NAME, &row.CNOTE_RECEIVER_CONTACT, &row.CNOTE_RECEIVER_ADDR1, &row.CNOTE_RECEIVER_ADDR2, &row.CNOTE_RECEIVER_ADDR3, &row.CNOTE_RECEIVER_PHONE, &row.CNOTE_RECEIVER_ZIP, &row.CNOTE_DESTINATION_ID, &row.BRANCH_DEST_REGION, &row.BRANCH_DESTINATION, &row.CNOTE_DESTINATION, &row.DESTINATION_NAME, &row.DESTINATION_CODE, &row.DESTINATION_ZONE, &row.CNOTE_SERVICES_CODE, &row.ROUTE_ETD_FROM, &row.ROUTE_ETD_THRU, &row.CNOTE_SHIPMENT_TYPE, &row.CNOTE_TRX_TYPE, &row.CNOTE_PAYMENT_TYPE, &row.CNOTE_QTY, &row.CNOTE_WEIGHT, &row.CNOTE_DIM, &row.CNOTE_GOODS_TYPE, &row.CNOTE_PACKING, &row.CNOTE_GOODS_DESCR, &row.CNOTE_GOODS_VALUE, &row.CNOTE_SPECIAL_INS, &row.CNOTE_INSURANCE_ID, &row.CNOTE_INSURANCE_VALUE, &row.CNOTE_AMOUNT, &row.CNOTE_ADDITIONAL_FEE, &row.CNOTE_COD, &row.COD_NO, &row.COD_GOODS_AMOUNT, &row.COD_AMOUNT, &row.CNOTE_CASHLESS, &row.JLC_NO, &row.JLC_NAME, &row.JLC_DISCOUNT, &row.HYBRID_BRANCH, &row.HYBRID_CUST_NO, &row.HYBRID_CUST_NAME, &row.HYBRID_CUST_ADDR1, &row.HYBRID_CUST_ADDR2, &row.HYBRID_CUST_ADDR3, &row.HYBRID_CUST_PHONE, &row.HYBRID_CUST_ZIP, &row.CNOTE_CANCEL, &row.CNOTE_HOLD, &row.CNOTE_USER, &row.CNOTE_USER_ZONE, &row.R_CNOTE_FREIGHT_CHARGE, &row.PUBLISH_RATE, &row.CASHREG_NO, &row.CASHREG_DATE, &row.CASHREG_USER_ID, &row.CASHREG_USER_ZONE, &row.CASHREG_CRDATE, &row.PICKUP_NO, &row.PICKUP_COURIER_ID, &row.PICKUP_COURIER_ZONE, &row.PICKUP_DATE, &row.PICKUP_CRDATE, &row.PICKUP_MERCHAN_ID, &row.PICKUP_LATITUDE, &row.PICKUP_LONGITUDE, &row.PU_FIRST_ATTTEMP_STATUS_CODE, &row.PU_FIRST_ATTTEMP_STATUS_DESC, &row.PU_FIRST_ATTTEMP_STATUS_DATE, &row.PU_LAST_ATTEMP_STATUS_CODE, &row.PU_LAST_ATTEMP_STATUS_DESC, &row.PU_LAST_ATTEMP_STATUS_DATE, &row.PU_REF_ID, &row.HO_NO, &row.HO_DATE, &row.HO_COURIER_ID, &row.HO_CDATE, &row.RECEIVING_AGENT_NO, &row.RECEIVING_AGENT_DATE, &row.RECEIVING_AGENT_BRANCH, &row.RECEIVING_AGENT_COURIER_ID, &row.RECEIVING_AGENT_USER_ID, &row.RECEIVING_AGENT_USER_ZONE, &row.RECEIVING_AGENT_CRDATE, &row.RECEIVING_OUT_NO, &row.RECEIVING_OUT_DATE, &row.RECEIVING_OUT_BRANCH, &row.RECEIVING_OUT_COURIER_ID, &row.RECEIVING_OUT_USER_ID, &row.RECEIVING_OUT_USER_ZONE, &row.RECEIVING_OUT_CRDATE, &row.MANIFEST_OUTB_NO, &row.MANIFEST_OUTB_ORIGIN, &row.MANIFEST_OUTB_DATE, &row.MANIFEST_OUTB_BAG_NO, &row.MANIFEST_OUTB_USER_ID, &row.MANIFEST_OUTB_USER_ZONE, &row.MANIFEST_OUTB_CRDATE, &row.SMU_NO, &row.SMU_SCHD_NO, &row.SMU_SCH_DATE, &row.SMU_DATE, &row.SMU_ETD, &row.SMU_ETA, &row.SMU_REMARKS, &row.SMU_REMARKS_DATE, &row.SMU_QTY, &row.SMU_WEIGHT, &row.SMU_FLAG_APPROVE, &row.SMU_FLAG_CANCEL, &row.SMU_DESTINATION, &row.MANIFEST_TRS1_NO, &row.MANIFEST_TRS1_ORIGIN, &row.MANIFEST_TRS1_DATE, &row.MANIFEST_TRS1_BAG_NO, &row.MANIFEST_TRS1_USER_ID, &row.MANIFEST_TRS1_USER_ZONE, &row.MANIFEST_TRS1_CRDATE, &row.MANIFEST_TRSL_NO, &row.MANIFEST_TRSL_ORIGIN, &row.MANIFEST_TRSL_DATE, &row.MANIFEST_TRSL_BAG_NO, &row.MANIFEST_TRSL_USER_ID, &row.MANIFEST_TRSL_USER_ZONE, &row.MANIFEST_TRSL_CRDATE, &row.MANIFEST_INB_NO, &row.MANIFEST_INB_ORIGIN, &row.MANIFEST_INB_DATE, &row.MANIFEST_INB_BAG_NO, &row.MANIFEST_INB_USER_ID, &row.MANIFEST_INB_USER_ZONE, &row.MANIFEST_INB_CRDATE, &row.MANIFEST_BAG_NO, &row.MANIFEST_BAG_DATE, &row.MANIFEST_BAG_BAG_NO, &row.MANIFEST_BAG_USER_ID, &row.MANIFEST_BAG_USER_ZONE, &row.MANIFEST_BAG_CRDATE, &row.PRA_MRSHEET_NO, &row.PRA_MRSHEET_DATE, &row.PRA_MRSHEET_BRANCH, &row.PRA_MRSHEET_ZONE, &row.PRA_MRSHEET_COURIER_ID, &row.PRA_COURIER_ZONE_CODE, &row.PRA_MRSHEET_UID, &row.PRA_USER_ZONE_CODE, &row.PRA_CREATION_DATE, &row.MTA_OUT_MANIFEST_NO, &row.MTA_OUT_MANIFEST_DATE, &row.MTA_OUT_BRANCH_ID, &row.MTA_OUT_DESTINATION, &row.MTA_OUT_MANIFEST_UID, &row.MTA_OUT_USER_ZONE_CODE, &row.MTA_OUT_ESB_TIME, &row.MTA_INB_MANIFEST_NO, &row.MTA_INB_MANIFEST_DATE, &row.MTA_INB_BRANCH_ID, &row.MTA_INB_DESTINATION, &row.MTA_INB_MANIFEST_UID, &row.MTA_INB_USER_ZONE_CODE, &row.MTA_INB_ESB_TIME, &row.MHOCNOTE_NO, &row.MHOCNOTE_DATE, &row.MHOCNOTE_BRANCH_ID, &row.MHOCNOTE_ZONE, &row.MHOCNOTE_ZONE_DEST, &row.MHOCNOTE_USER_ID, &row.MHOCNOTE_USER_ZONE_CODE, &row.DHOCNOTE_TDATE, &row.MHICNOTE_NO, &row.MHICNOTE_DATE, &row.MHICNOTE_BRANCH_ID, &row.MHICNOTE_ZONE, &row.MHICNOTE_USER_ID, &row.MHICNOTE_USER_ZONE_CODE, &row.DHICNOTE_TDATE, &row.MRSHEET1_NO, &row.MRSHEET1_DATE, &row.MRSHEET1_BRANCH, &row.MRSHEET1_COURIER_ID, &row.MRSHEET1_UID, &row.MRSHEET1_USER_ZONE_CODE, &row.MRSHEET1_CREATION_DATE, &row.MRSHEETL_NO, &row.MRSHEETL_DATE, &row.MRSHEETL_BRANCH, &row.MRSHEETL_COURIER_ID, &row.MRSHEETL_UID, &row.MRSHEETL_USER_ZONE_CODE, &row.MRSHEETL_CREATION_DATE, &row.POD1_DRSHEET_NO, &row.POD1_MRSHEET_DATE, &row.POD1_MRSHEET_BRANCH, &row.POD1_MRSHEET_COURIER_ID, &row.POD1_COURIER_ZONE_CODE, &row.POD1_DRSHEET_DATE, &row.POD1_DRSHEET_RECEIVER, &row.POD1_DRSHEET_STATUS, &row.POD1_LATITUDE, &row.POD1_LONGITUDE, &row.POD1_EPOD_URL, &row.POD1_EPOD_URL_PIC, &row.POD1_DRSHEET_UID, &row.POD1_USER_ZONE_CODE, &row.POD1_DRSHEET_UDATE, &row.PODL_DRSHEET_NO, &row.PODL_MRSHEET_DATE, &row.PODL_MRSHEET_BRANCH, &row.PODL_MRSHEET_COURIER_ID, &row.PODL_COURIER_ZONE_CODE, &row.PODL_DRSHEET_DATE, &row.PODL_DRSHEET_RECEIVER, &row.PODL_DRSHEET_STATUS, &row.PODL_LATITUDE, &row.PODL_LONGITUDE, &row.PODL_EPOD_URL, &row.PODL_EPOD_URL_PIC, &row.PODL_DRSHEET_UID, &row.PODL_USER_ZONE_CODE, &row.PODL_DRSHEET_UDATE, &row.DO_NO, &row.DO_DATE, &row.RDO_NO, &row.RDO_DATE, &row.SHIPPER_PROVIDER, &row.CNOTE_REFNO, &row.MANIFEST_OUTB_APPROVED, &row.MANIFEST_INB_APPROVED, &row.SMU_BAG_BUX, &row.SMU_TGL_MASTER_BAG, &row.SMU_USER_MASTER_BAG, &row.SMU_NO_MASTER_BAG, &row.SMU_MANIFEST_DESTINATION, &row.MANIFEST_COST_WEIGHT, &row.MANIFEST_ACT_WEIGHT, &row.DWH_PACKING_FEE, &row.DWH_SURCHARGE, &row.DWH_DISC_REV_TYPE, &row.DWH_DISCOUNT_AMT, &row.DWH_FCHARGE_AFT_DISC_AMT, &row.DWH_CUST_DISC_IC, &row.DWH_CUST_DISC_DM, &row.DWH_RT_PACKING_FEE, &row.DWH_RT_FREIGHT_CHARGE, &row.DWH_RT_SURCHARGE, &row.DWH_RT_DISC_AMT, &row.DWH_RT_FCHARGE_AFT_DISC_AMT, &row.DWH_PAYTYPE, &row.DWH_EPAY_VEND, &row.DWH_EPAY_TRXID, &row.DWH_VAT_FCHARGE_AFT_DISC, &row.DWH_VAT_RT_FCHARGE_AFT_DISC)
-
-		log.Println("here :" + row.CNOTE_NO)
-		res = append(res, row)
-	}
-	// log.Printf("here : %v", res[0])
+	fmt.Println((time.Now()).String() + " Fetched From Oracle, Got Total data : " + strconv.Itoa(len(res)))
 	return res
 
 }
 
-func checkNull() {
+//function insert dwh and cms_return to couchbase mapr
+func insertDwhCmsReturn(datas []datastruct.T_dwh) bool {
+	log.Println("insert to couchbase mapr")
 
+	//OPEN DB
+	c := couchDB.OpenConn()
+	//OPEN bucket, scope and collection
+	log.Println("bucket name :" + os.Getenv("DB_NAME"))
+	bucket := c.Bucket(os.Getenv("DB_NAME"))
+
+	err := bucket.WaitUntilReady(5*time.Second, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	col := bucket.Scope("CCC").Collection("CCC")
+
+	for _, data := range datas {
+		key := data.CNOTE_NO
+		_, err = col.Upsert(key, data, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	log.Println("insert to Couchbase Success")
+	return true
 }
 
 //function insert cms_return to couchbase mapr
@@ -258,7 +338,8 @@ func insertToTarget(datas []datastruct.T_dwh) bool {
 
 	for _, data := range datas {
 		key := data.CNOTE_NO
-
+		jsonData, err := json.Marshal(&data)
+		rawData := json.RawMessage(jsonData)
 		// newData := datastruct.T_dwh{
 		// 	CREATE_DATE:                  data.CREATE_DATE.Time,
 		// 	CNOTE_NO:                     data.CNOTE_NO.String,
@@ -541,11 +622,11 @@ func insertToTarget(datas []datastruct.T_dwh) bool {
 		// 	DWH_VAT_FCHARGE_AFT_DISC:     data.DWH_VAT_FCHARGE_AFT_DISC.Float64,
 		// 	DWH_VAT_RT_FCHARGE_AFT_DISC:  data.DWH_VAT_RT_FCHARGE_AFT_DISC.Float64,
 		// }
-		_, err = col.Upsert(key, data, nil)
+		_, err = col.Upsert(key, rawData, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-	log.Println("insert to Couchbase Success")
+	fmt.Println((time.Now()).String() + " Successfully inserted to Couchbase, Total data : " + strconv.Itoa(len(datas)))
 	return true
 }
